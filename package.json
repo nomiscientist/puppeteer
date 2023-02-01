@@ -1,5 +1,5 @@
 {
-  "name": "puppeteer-repo",
+  "name": "@puppeteer/repo",
   "private": true,
   "repository": {
     "type": "git",

@@ -1,5 +1,5 @@
 {
-  "name": "@puppeteer-test/test",
+  "name": "@puppeteer/test",
   "version": "latest",
   "private": true,
   "scripts": {

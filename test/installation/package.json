@@ -1,5 +1,5 @@
 {
-  "name": "@puppeteer-test/installation",
+  "name": "@puppeteer/installation-test",
   "version": "latest",
   "type": "module",
   "private": true,

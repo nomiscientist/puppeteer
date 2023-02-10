@@ -18,7 +18,6 @@ import {ARIAQueryHandler} from './AriaQueryHandler.js';
 import {PierceQueryHandler} from './PierceQueryHandler.js';
 import {XPathQueryHandler} from './XPathQueryHandler.js';
 import {TextQueryHandler} from './TextQueryHandler.js';
-import {CSSQueryHandler} from './CSSQueryHandler.js';
 import {customQueryHandlers} from './CustomQueryHandler.js';
 import type {QueryHandler} from './QueryHandler.js';
 
@@ -64,5 +63,5 @@ export function getQueryHandlerAndSelector(selector: string): {
       }
     }
   }
-  return {updatedSelector: selector, queryHandler: CSSQueryHandler};
+  return {updatedSelector: selector, queryHandler: PQueryHandler};
 }

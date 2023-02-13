@@ -18,10 +18,10 @@ import {Protocol} from 'devtools-protocol';
 
 import {ElementHandle} from '../api/ElementHandle.js';
 import {assert} from '../util/assert.js';
+import {AsyncIterableUtil} from '../util/AsyncIterableUtil.js';
 import {CDPSession} from './Connection.js';
 import type {Frame} from './Frame.js';
 import type {WaitForSelectorOptions} from './IsolatedWorld.js';
-import {IterableUtil} from './IterableUtil.js';
 import {QueryHandler, QuerySelector} from './QueryHandler.js';
 import {AwaitableIterable} from './types.js';
 
@@ -108,7 +108,7 @@ export class ARIAQueryHandler extends QueryHandler {
     const {name, role} = parseARIASelector(selector);
     const results = await queryAXTree(context._client, element, name, role);
     const world = context._world!;
-    yield* IterableUtil.map(results, node => {
+    yield* AsyncIterableUtil.map(results, node => {
       return world.adoptBackendNode(node.backendDOMNodeId) as Promise<
         ElementHandle<Node>
       >;
@@ -119,7 +119,9 @@ export class ARIAQueryHandler extends QueryHandler {
     element: ElementHandle<Node>,
     selector: string
   ): Promise<ElementHandle<Node> | null> => {
-    return (await IterableUtil.first(this.queryAll(element, selector))) ?? null;
+    return (
+      (await AsyncIterableUtil.first(this.queryAll(element, selector))) ?? null
+    );
   };
 
   static override async waitFor(

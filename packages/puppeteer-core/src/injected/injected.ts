@@ -24,6 +24,7 @@ import {
 import * as TextQuerySelector from './TextQuerySelector.js';
 import * as XPathQuerySelector from './XPathQuerySelector.js';
 import * as PierceQuerySelector from './PierceQuerySelector.js';
+import * as PQuerySelector from './PQuerySelector.js';
 import * as util from './util.js';
 
 /**
@@ -34,6 +35,7 @@ const PuppeteerUtil = Object.freeze({
   ...TextQuerySelector,
   ...XPathQuerySelector,
   ...PierceQuerySelector,
+  ...PQuerySelector,
   createFunction,
   createDeferredPromise,
   createTextContent,

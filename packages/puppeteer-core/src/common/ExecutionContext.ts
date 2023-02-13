@@ -29,6 +29,8 @@ import {
   stringifyFunction,
   valueFromRemoteObject,
 } from './util.js';
+import {assert} from '../util/assert.js';
+import {Binding} from './Binding.js';
 
 /**
  * @public
@@ -102,6 +104,19 @@ export class ExecutionContext {
       ) as Promise<JSHandle<PuppeteerUtil>>;
     }
     return this.#puppeteerUtil;
+  }
+
+  /**
+   * This is only available on contexts with a world. It can be done on workers
+   * as well, but we don't need the use-case at the moment.
+   */
+  async createGlobalBinding(
+    name: string,
+    fn: (...args: unknown[]) => unknown
+  ): Promise<void> {
+    assert(this._world);
+    this._world._bindings.set(name, new Binding(name, fn));
+    await this._world._addBindingToContext(this, name);
   }
 
   /**

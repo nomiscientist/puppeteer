@@ -20,6 +20,7 @@ import {XPathQueryHandler} from './XPathQueryHandler.js';
 import {TextQueryHandler} from './TextQueryHandler.js';
 import {customQueryHandlers} from './CustomQueryHandler.js';
 import type {QueryHandler} from './QueryHandler.js';
+import {PQueryHandler} from './PQueryHandler.js';
 
 export const BUILTIN_QUERY_HANDLERS = Object.freeze({
   aria: ARIAQueryHandler,

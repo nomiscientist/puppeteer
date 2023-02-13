@@ -15,31 +15,100 @@
  */
 
 import {ElementHandle} from '../api/ElementHandle.js';
-import {IterableUtil} from './IterableUtil.js';
-import {PQueryEngine} from './PQueryEngine.js';
-import {QueryHandler} from './QueryHandler.js';
-import {AwaitableIterable} from './types.js';
+import {ARIAQueryHandler} from './AriaQueryHandler.js';
+import {customQueryHandlers} from './CustomQueryHandler.js';
+import type {Frame} from './Frame.js';
+import type {IsolatedWorld, WaitForSelectorOptions} from './IsolatedWorld.js';
+import {PUPPETEER_WORLD} from './IsolatedWorlds.js';
+import {QueryHandler, QuerySelector, QuerySelectorAll} from './QueryHandler.js';
+import type {AwaitableIterable} from './types.js';
+
+const noop = () => {};
 
 /**
  * @internal
  */
 export class PQueryHandler extends QueryHandler {
+  static override querySelectorAll: QuerySelectorAll = (
+    element,
+    selector,
+    {pQuerySelectorAll}
+  ) => {
+    return pQuerySelectorAll(element, selector);
+  };
+  static override querySelector: QuerySelector = (
+    element,
+    selector,
+    {pQuerySelector}
+  ) => {
+    return pQuerySelector(element, selector);
+  };
+
   static override async *queryAll(
     element: ElementHandle<Node>,
     selector: string
   ): AwaitableIterable<ElementHandle<Node>> {
-    const query = new PQueryEngine(element, selector);
-    await query.run();
-    const world = element.executionContext()._world!;
-    yield* IterableUtil.map(query.elements, element => {
-      return world.transferHandle(element);
-    });
-  }
+    await this.#prepareQueryAll(element.frame.page());
 
+    await element
+      .executionContext()
+      .createGlobalBinding(
+        '__ariaQuerySelectorAll',
+        ARIAQueryHandler.queryAll as (...args: unknown[]) => unknown
+      );
+
+    yield* super.queryAll(element, selector);
+  }
   static override async queryOne(
     element: ElementHandle<Node>,
     selector: string
   ): Promise<ElementHandle<Node> | null> {
-    return (await IterableUtil.first(this.queryAll(element, selector))) ?? null;
+    let extraQuerySelectors = await element.evaluateHandle(_ => {});
+    for (const [name, handler] of customQueryHandlers) {
+      await world
+        .evaluateOnNewDocument(
+          (name, functionText) => {
+            Object.assign(window, {
+              [`__customQuerySelector_${name}`]: new Function(
+                `return ${functionText}`
+              )(),
+            });
+          },
+          name,
+          handler._querySelector.toString()
+        )
+        .catch(noop);
+    }
+    await this.#prepareQueryOne(element.frame.page());
+
+    await element
+      .executionContext()
+      .createGlobalBinding(
+        '__ariaQuerySelector',
+        ARIAQueryHandler.queryOne as (...args: unknown[]) => unknown
+      );
+
+    return super.queryOne(element, selector);
+  }
+  static override async waitFor(
+    elementOrFrame: ElementHandle<Node> | Frame,
+    selector: string,
+    options: WaitForSelectorOptions
+  ): Promise<ElementHandle<Node> | null> {
+    if (!(elementOrFrame instanceof ElementHandle)) {
+      await this.#prepareQueryAll(
+        (
+          await elementOrFrame.worlds[PUPPETEER_WORLD].e()
+        )._world!
+      );
+    } else {
+      await this.#prepareQueryAll(elementOrFrame.executionContext()._world);
+    }
+    return super.waitFor(
+      elementOrFrame,
+      selector,
+      options,
+      new Map([['__ariaQuerySelectorAll', ARIAQueryHandler.queryAll]])
+    );
   }
 }

@@ -1,0 +1,184 @@
+import {parsePSelectors, PSelector} from './PSelectorParser.js';
+import {deepChildren, deepDescendents} from './util.js';
+import {textQuerySelectorAll} from './TextQuerySelector.js';
+import {xpathQuerySelectorAll} from './XPathQuerySelector.js';
+import {AsyncIterableUtil} from '../util/AsyncIterableUtil.js';
+import type {Awaitable, AwaitableIterable} from '../common/types.js';
+
+type QuerySelectorAll = (
+  node: Node,
+  selector: string
+) => Awaitable<AwaitableIterable<Node>>;
+
+/**
+ * Common state for {@link PQueryAllEngine}.
+ */
+class PQueryEngine {
+  #deepShadowSelectors: PSelector[][][];
+  #shadowSelectors: PSelector[][];
+  #selectors: PSelector[];
+  #selector: PSelector | undefined;
+
+  #extraQuerySelectors: Map<string, QuerySelectorAll>;
+
+  elements: AwaitableIterable<Node>;
+
+  constructor(
+    element: Node,
+    selector: string,
+    extraQuerySelectors: Map<string, QuerySelectorAll>
+  ) {
+    selector = selector.trim();
+    if (selector.length === 0) {
+      throw new Error('The provided selector is empty.');
+    }
+    this.#deepShadowSelectors = parsePSelectors(selector);
+
+    // If there are any empty elements, then this implies the selector has
+    // contiguous combinators (e.g. `>>> >>>>`) or starts/ends with one which we
+    // treat as illegal, similar to existing behavior.
+    if (
+      this.#deepShadowSelectors.some(shadowSelectors => {
+        return shadowSelectors.some(selectors => {
+          return selectors.length === 0;
+        });
+      })
+    ) {
+      throw new Error(`${selector} is not a valid selector.`);
+    }
+
+    this.#shadowSelectors = this.#deepShadowSelectors.shift() as PSelector[][];
+    this.#selectors = this.#shadowSelectors.shift() as PSelector[];
+    this.#selector = this.#selectors.shift();
+
+    this.#extraQuerySelectors = extraQuerySelectors;
+
+    this.elements = [element];
+  }
+
+  async run(): Promise<void> {
+    if (typeof this.#selector === 'string') {
+      switch (this.#selector.trimStart()) {
+        case ':scope':
+          // `:scope` has some special behavior depending on the node. It always
+          // represents the current node within a compound selector, but by
+          // itself, it depends on the node. For example, Document is
+          // represented by `<html>`, but any HTMLElement is not represented by
+          // itself (i.e. `null`). This can be troublesome if our combinators
+          // are used right after so we treat this selector specially.
+          this.#next();
+          break;
+        default:
+          /**
+           * We add the space since `.foo` will interpolate incorrectly (see
+           * {@link PQueryAllEngine.query}). This is always equivalent.
+           */
+          this.#selector = ` ${this.#selector}`;
+          break;
+      }
+    }
+
+    const extraQuerySelectors = this.#extraQuerySelectors;
+    for (; this.#selector !== undefined; this.#next()) {
+      const selector = this.#selector;
+      this.elements = AsyncIterableUtil.flatMap(
+        this.elements,
+        async function* (element) {
+          if (typeof selector === 'string') {
+            if (!element.parentElement) {
+              yield* (element as Element).querySelectorAll(selector);
+            } else {
+              let index = 0;
+              for (const child of element.parentElement.children) {
+                ++index;
+                if (child === element) {
+                  break;
+                }
+              }
+              yield* element.parentElement.querySelectorAll(
+                `:scope > :nth-child(${index})${selector}`
+              );
+            }
+          } else {
+            switch (selector.name) {
+              case 'text':
+                yield* textQuerySelectorAll(element, selector.value);
+                break;
+              case 'xpath':
+                yield* xpathQuerySelectorAll(element, selector.value);
+                break;
+              default:
+                const querySelectorAll = extraQuerySelectors.get(selector.name);
+                if (!querySelectorAll) {
+                  throw new Error(`${selector} is not a valid selector.`);
+                }
+                yield* await querySelectorAll(element, selector.value);
+            }
+          }
+        }
+      );
+    }
+  }
+
+  #next() {
+    if (this.#selectors.length === 0) {
+      if (this.#shadowSelectors.length === 0) {
+        if (this.#deepShadowSelectors.length === 0) {
+          this.#selector = undefined;
+          return;
+        }
+        this.elements = AsyncIterableUtil.flatMap(
+          this.elements,
+          function* (element) {
+            yield* deepDescendents(element);
+          }
+        );
+        this.#shadowSelectors =
+          this.#deepShadowSelectors.shift() as PSelector[][];
+      }
+      this.elements = AsyncIterableUtil.flatMap(
+        this.elements,
+        function* (element) {
+          yield* deepChildren(element);
+        }
+      );
+      this.#selectors = this.#shadowSelectors.shift() as PSelector[];
+    }
+    this.#selector = this.#selectors.shift() as PSelector;
+  }
+}
+
+/**
+ * Queries the given node for all nodes matching the given text selector.
+ *
+ * @internal
+ */
+export const pQuerySelectorAll = async function* (
+  root: Node,
+  selector: string,
+  extraQuerySelectors: Map<string, QuerySelectorAll>
+): AwaitableIterable<Node> {
+  const query = new PQueryEngine(root, selector, extraQuerySelectors);
+  query.run();
+  yield* query.elements;
+};
+
+/**
+ * Queries the given node for all nodes matching the given text selector.
+ *
+ * @internal
+ */
+export const pQuerySelector = async function (
+  root: Node,
+  selector: string,
+  extraQuerySelectors: Map<string, QuerySelectorAll>
+): Promise<Node | null> {
+  for await (const element of pQuerySelectorAll(
+    root,
+    selector,
+    extraQuerySelectors
+  )) {
+    return element;
+  }
+  return null;
+};
